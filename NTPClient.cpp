@@ -25,7 +25,7 @@ NTPClient::NTPClient(UDP& udp) {
   this->_udp            = &udp;
 }
 
-NTPClient::NTPClient(UDP& udp, long timeOffset) {
+NTPClient::NTPClient(UDP& udp, int timeOffset) {
   this->_udp            = &udp;
   this->_timeOffset     = timeOffset;
 }
@@ -35,13 +35,13 @@ NTPClient::NTPClient(UDP& udp, const char* poolServerName) {
   this->_poolServerName = poolServerName;
 }
 
-NTPClient::NTPClient(UDP& udp, const char* poolServerName, long timeOffset) {
+NTPClient::NTPClient(UDP& udp, const char* poolServerName, int timeOffset) {
   this->_udp            = &udp;
   this->_timeOffset     = timeOffset;
   this->_poolServerName = poolServerName;
 }
 
-NTPClient::NTPClient(UDP& udp, const char* poolServerName, long timeOffset, unsigned long updateInterval) {
+NTPClient::NTPClient(UDP& udp, const char* poolServerName, int timeOffset, int updateInterval) {
   this->_udp            = &udp;
   this->_timeOffset     = timeOffset;
   this->_poolServerName = poolServerName;
@@ -101,26 +101,26 @@ bool NTPClient::update() {
   return true;
 }
 
-unsigned long NTPClient::getEpochTime() const {
+unsigned long NTPClient::getEpochTime() {
   return this->_timeOffset + // User offset
          this->_currentEpoc + // Epoc returned by the NTP server
          ((millis() - this->_lastUpdate) / 1000); // Time since last update
 }
 
-int NTPClient::getDay() const {
+int NTPClient::getDay() {
   return (((this->getEpochTime()  / 86400L) + 4 ) % 7); //0 is Sunday
 }
-int NTPClient::getHours() const {
+int NTPClient::getHours() {
   return ((this->getEpochTime()  % 86400L) / 3600);
 }
-int NTPClient::getMinutes() const {
+int NTPClient::getMinutes() {
   return ((this->getEpochTime() % 3600) / 60);
 }
-int NTPClient::getSeconds() const {
+int NTPClient::getSeconds() {
   return (this->getEpochTime() % 60);
 }
 
-String NTPClient::getFormattedTime() const {
+String NTPClient::getFormattedTime() {
   unsigned long rawTime = this->getEpochTime();
   unsigned long hours = (rawTime % 86400L) / 3600;
   String hoursStr = hours < 10 ? "0" + String(hours) : String(hours);
@@ -134,6 +134,35 @@ String NTPClient::getFormattedTime() const {
   return hoursStr + ":" + minuteStr + ":" + secondStr;
 }
 
+#define LEAP_YEAR(Y)     ( (Y>0) && !(Y%4) && ( (Y%100) || !(Y%400) ) )
+
+// Based on https://github.com/PaulStoffregen/Time/blob/master/Time.cpp
+// currently assumes UTC timezone, instead of using this->_timeOffset
+String NTPClient::getFormattedDateTime() {
+  unsigned long rawTime = (this->getEpochTime()) / 86400L;  // in days
+  unsigned long days = 0, year = 1970;
+  uint8_t month;
+  static const uint8_t monthDays[]={31,28,31,30,31,30,31,31,30,31,30,31};
+
+  while((days += (LEAP_YEAR(year) ? 366 : 365)) <= rawTime)
+    year++;
+  rawTime -= days - (LEAP_YEAR(year) ? 366 : 365); // now it is days in this year, starting at 0
+  days=0;
+  for (month=0; month<12; month++) {
+    uint8_t monthLength;
+    if (month==1) { // february
+      monthLength = LEAP_YEAR(year) ? 29 : 28;
+    } else {
+      monthLength = monthDays[month];
+    }
+    if (rawTime < monthLength) break;
+    rawTime -= monthLength;
+  }
+  String monthStr = ++month < 10 ? "0" + String(month) : String(month); // jan is month 1  
+  String dayStr = ++rawTime < 10 ? "0" + String(rawTime) : String(rawTime); // day of month  
+  return String(year) + "-" + monthStr + "-" + dayStr + " " + this->getFormattedTime();
+}
+
 void NTPClient::end() {
   this->_udp->stop();
 
@@ -144,12 +173,8 @@ void NTPClient::setTimeOffset(int timeOffset) {
   this->_timeOffset     = timeOffset;
 }
 
-void NTPClient::setUpdateInterval(unsigned long updateInterval) {
+void NTPClient::setUpdateInterval(int updateInterval) {
   this->_updateInterval = updateInterval;
-}
-
-void NTPClient::setPoolServerName(const char* poolServerName) {
-    this->_poolServerName = poolServerName;
 }
 
 void NTPClient::sendNTPPacket() {
